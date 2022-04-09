@@ -7,8 +7,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 ## Require full C++ standard
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 project(HELibDemo VERSION 1.0)
+
 add_executable(helibdemo helibdemo.cpp)
 add_executable(PowSums PowSums.cpp)
+add_executable(E_2 E_2.cpp)
+
 find_package(helib ${HELIB_VERSION} REQUIRED)
 target_link_libraries(helibdemo helib)
 target_link_libraries(PowSums helib)
+target_link_libraries(E_2 helib)

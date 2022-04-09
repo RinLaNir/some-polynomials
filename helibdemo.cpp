@@ -18,61 +18,39 @@ long long BrutPowerSum(const std::vector<long>& arr, long power)
   return sum;
 }
 
-std::vector<helib::Ctxt> E_2(const helib::EncryptedArray& ea, helib::Ctxt & ctxt)
+helib::Ctxt E_2(const helib::EncryptedArray& ea, const helib::Ctxt & ctxt)
 {
-  helib::Ctxt tmp1 = ctxt;
-  helib::Ctxt tmp2 = ctxt;
-  helib::Ctxt res = ctxt;
-  helib::Ptxt<helib::BGV> ptxt(ctxt.getContext());
-  long n = ea.size();
+    helib::Ctxt tmp1 = ctxt;
+    helib::Ctxt tmp2 = ctxt;
+    helib::Ctxt res = ctxt;
+    helib::Ptxt<helib::BGV> ptxt(ctxt.getContext());
+    long n = ea.size();
 
-  for (int i = 0; i < n; ++i)
-  {
-    ptxt[i] = 1;
-  }
-  ptxt[n-1] = 0;
-
-  ea.rotate(tmp1, -1);
-  tmp1 *= ptxt;
-  res *= tmp1;
-  tmp1 = ctxt;
-  std::vector<helib::Ctxt> ctxt_arr;
-
-  for (int i = 1; i < (n-1); ++i)
-  {
-    ea.rotate(tmp1, -i-1);
-    ptxt[n-i-1] = 0;
-
-    if (!res.isCorrect()){
-      ctxt_arr.emplace_back(res);
-      res.clear();
+    for (int i = 0; i < n; ++i){
+        ptxt[i] = 1;
     }
+    ptxt[n-1] = 0;
 
+    ea.rotate(tmp1, -1);
     tmp1 *= ptxt;
-    tmp2 *= tmp1;
-    res += tmp2;
-
-    tmp2 = ctxt;
+    res *= tmp1;
     tmp1 = ctxt;
-    
-  }
 
-  ctxt_arr.emplace_back(res);
+    for (int i = 1; i < (n-1); ++i)
+    {
+        ea.rotate(tmp1, -i-1);
+        ptxt[n-i-1] = 0;
 
-  return ctxt_arr;
-}
+        tmp1 *= ptxt;
+        tmp2 *= tmp1;
+        res += tmp2;
 
-helib::Ptxt<helib::BGV> ResPowerSum(std::vector<helib::Ctxt>& ctxt_arr, helib::SecKey& secret_key)
-{
-  helib::Ptxt<helib::BGV> plaintext_result(ctxt_arr[0].getContext());
-  helib::Ptxt<helib::BGV> plaintext_temp(ctxt_arr[0].getContext());
-  for (int i=0; i < ctxt_arr.size(); i++){
-    secret_key.Decrypt(plaintext_temp, ctxt_arr[i]);
-    plaintext_result += plaintext_temp;
-  }
+        tmp2 = ctxt;
+        tmp1 = ctxt;
+    }
+    helib::totalSums(ea, res);
 
-  plaintext_result.totalSums();
-  return plaintext_result;
+    return res;
 }
 
 int main(int argc, char* argv[])
@@ -171,11 +149,10 @@ int main(int argc, char* argv[])
 
   ctxt.clear();
   public_key.Encrypt(ctxt, ptxt);
-  helib::Ctxt res(public_key);
-  std::vector<helib::Ctxt> ctxt_arr = E_2(ea, ctxt);
+  helib::Ctxt res = E_2(ea, ctxt);
 
-  helib::Ptxt result = ResPowerSum(ctxt_arr, secret_key);
-  std::cout << "Decrypted Result: " << result << std::endl;
+  secret_key.Decrypt(plaintext_result, res);
+  std::cout << "Decrypted Result: " << plaintext_result << std::endl;
 
   return 0;
 }
