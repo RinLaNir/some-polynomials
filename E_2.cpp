@@ -1,85 +1,100 @@
 #include <iostream>
 #include <helib/helib.h>
 
-helib::Ctxt E_2(const helib::EncryptedArray& ea, const helib::Ctxt & ctxt)
+// Calculation of the elementary symmetric polynomial for k=2.
+// const arg ea: Data-movement operations on arrays of slots (helib::EncryptedArray)
+// const arg ctxt: Сryptotext of BGV scheme (helib::Ctxt)
+
+/* -------------------------- Version 1 ---------------------------------*/
+
+// Input: C - cryptotext
+// res = 0
+// for i <-- 1 to n do
+//     res <-- res + C * (C <<< i)
+// res <-- TotalSums(res)
+// Return: res
+
+helib::Ctxt E_2_V1(const helib::EncryptedArray& ea, const helib::Ctxt & ctxt)
 {
     helib::Ctxt tmp1 = ctxt;
     helib::Ctxt tmp2 = ctxt;
     helib::Ctxt res = ctxt;
-    helib::Ptxt<helib::BGV> ptxt(ctxt.getContext());
-    long n = ea.size();
+    
+    long n = ea.size();                    // number of slots
+    
+    ea.shift(tmp1, -1);                    // ctxt <<< 1
+    
+    res *= tmp1;                           // = ctxt * (ctxt <<< 1)
+    tmp1 = ctxt;                           // to avoid noise accumulation
 
-    for (int i = 0; i < n; ++i){
-        ptxt[i] = 1;
-    }
-    ptxt[n-1] = 0;
-
-    ea.rotate(tmp1, -1);
-    tmp1 *= ptxt;
-    res *= tmp1;
-    tmp1 = ctxt;
-
-    for (int i = 1; i < (n-1); ++i)
+    for (int i = 2; i < n; ++i)
     {
-        ea.rotate(tmp1, -i-1);
-        ptxt[n-i-1] = 0;
+        HELIB_NTIMER_START(timer_E2_V1);
+        
+        ea.shift(tmp1, -i);                // ctxt <<< i
 
-        tmp1 *= ptxt;
-        tmp2 *= tmp1;
-        res += tmp2;
+        tmp2 *= tmp1;                      // ctxt * (ctxt <<< i)
+        res += tmp2;                       // res + ctxt * (ctxt <<< i)
 
         tmp2 = ctxt;
         tmp1 = ctxt;
+        
+        HELIB_NTIMER_STOP(timer_E2_V1);
     }
-    helib::totalSums(ea, res);
+    helib::totalSums(ea, res);             // TotalSums(res)
+    
+    helib::printNamedTimer(std::cout, "timer_E2_V1");
 
     return res;
 }
 
 
-helib::Ctxt E_2_V2(const helib::EncryptedArray& ea, helib::Ctxt & ctxt)
+/* -------------------------- Version 2 ---------------------------------*/
+
+// Input: C - cryptotext
+// sum = 0
+// orig = 0
+// for i <-- 1 to n do
+//     sum <-- sum + (C >>> i)
+// orig <-- C * sum
+// orig <-- TotalSums(orig)
+// Return: orig
+
+helib::Ctxt E_2_V2(const helib::EncryptedArray& ea, const helib::Ctxt & ctxt)
 {
     helib::Ctxt tmp1 = ctxt;
-    helib::Ctxt tmp2 = ctxt;
-    helib::Ctxt res = ctxt;
+    helib::Ctxt orig = ctxt;
+    helib::Ctxt sum = ctxt;
     long n = ea.size();
 
-    ea.rotate(tmp1, -1);
-    res *= tmp1;
-    tmp1 = ctxt;
+    ea.shift(sum, 1);                    // sum + C >>> 1
 
-    for (int i = 1; i < (n-1); ++i){
-        ea.rotate(tmp1, -i-1);
+    for (int i = 2; i < n; ++i)
+    {
+        HELIB_NTIMER_START(timer_E2_V3);
 
-        tmp2 *= tmp1;
-        res += tmp2;
-
-        tmp2 = ctxt;
+        ea.shift(tmp1, i);               // C >>> i
+        sum += tmp1;                     // sum + C >>> i
         tmp1 = ctxt;
+
+        HELIB_NTIMER_STOP(timer_E2_V3);
     }
-    helib::totalSums(ea, res);
+    orig *= sum;                         // orig * sum
+    helib::totalSums(ea, orig);          // TotalSums(orig)
 
-    return res;
+    helib::printNamedTimer(std::cout, "timer_E2_V3");
+
+    return orig;
 }
 
-helib::Ptxt<helib::BGV> ResPowerSum(std::vector<helib::Ctxt>& ctxt_arr, helib::SecKey& secret_key)
-{
-  helib::Ptxt<helib::BGV> plaintext_result(ctxt_arr[0].getContext());
-  helib::Ptxt<helib::BGV> plaintext_temp(ctxt_arr[0].getContext());
-  for (int i=0; i < ctxt_arr.size(); i++){
-    secret_key.Decrypt(plaintext_temp, ctxt_arr[i]);
-    plaintext_result += plaintext_temp;
-  }
 
-  plaintext_result.totalSums();
-  return plaintext_result;
-}
+
 
 int main(int argc, char* argv[])
 {
   std::cout << "Initialising context object..." << std::endl;
   helib::Context context = helib::ContextBuilder<helib::BGV>()
-                               .m(32763)
+                               .m(32663)
                                .p(2)
                                .r(31)
                                .bits(350)
@@ -101,9 +116,10 @@ int main(int argc, char* argv[])
     long nslots = ea.size();
     std::cout << "Number of slots: " << nslots << std::endl;
     
+    // ptxt = [1,2,3,4,5,...,nslots]
     helib::Ptxt<helib::BGV> ptxt(context);
     for (int i = 0; i < ptxt.size(); ++i) {
-        ptxt[i] = i;
+        ptxt[i] = i+1;
     }
     
     helib::Ctxt ctxt(public_key);
@@ -113,20 +129,19 @@ int main(int argc, char* argv[])
     helib::Ctxt ctxt_res(public_key);
     helib::Ptxt<helib::BGV> result(context);
 
-
-    std::cout << "E_2 V1 " << std::endl;
-    for(int i=0; i<10; i++){
+    std::cout << "E_2 V1" << std::endl;
+    for(int i=0; i<5; i++){
         tmp = ctxt;
         HELIB_NTIMER_START(timer_v1);
-        ctxt_res = E_2(ea, tmp);
+        ctxt_res = E_2_V1(ea, tmp);
         HELIB_NTIMER_STOP(timer_v1);
     }
     helib::printNamedTimer(std::cout, "timer_v1");
     secret_key.Decrypt(result, ctxt_res);
     std::cout << "Decrypted Result: " << result << std::endl;
 
-    std::cout << "E_2 V2 " << std::endl;
-    for(int i=0; i<10; i++){
+    std::cout << "E_2 V2" << std::endl;
+    for(int i=0; i<5; i++){
         tmp = ctxt;
         HELIB_NTIMER_START(timer_v2);
         ctxt_res = E_2_V2(ea, tmp);

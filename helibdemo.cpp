@@ -1,55 +1,82 @@
 #include <iostream>
 #include <helib/helib.h>
 
-
-void PowerSum(const helib::EncryptedArray& ea, helib::Ctxt & ctxt, long power)
+void PowerSumSymm(const helib::EncryptedArray& ea, helib::Ctxt & ctxt, const long power)
 {
   ctxt.power(power);
-  helib::totalSums(ea, ctxt);
+  helib::totalSums(ea, ctxt); 
 }
 
-long long BrutPowerSum(const std::vector<long>& arr, long power)
+long long BrutPowerSumSymm(const std::vector<long>& arr, const long power)
 {
   long long sum = 0;
   for (long i = 0L; i < arr.size(); ++i){
     sum += std::pow(arr[i], power);
   }
-
   return sum;
 }
+
 
 helib::Ctxt E_2(const helib::EncryptedArray& ea, const helib::Ctxt & ctxt)
 {
     helib::Ctxt tmp1 = ctxt;
-    helib::Ctxt tmp2 = ctxt;
-    helib::Ctxt res = ctxt;
-    helib::Ptxt<helib::BGV> ptxt(ctxt.getContext());
+    helib::Ctxt orig = ctxt;
+    helib::Ctxt sum = ctxt;
     long n = ea.size();
 
-    for (int i = 0; i < n; ++i){
-        ptxt[i] = 1;
-    }
-    ptxt[n-1] = 0;
+    ea.shift(sum, 1);
 
-    ea.rotate(tmp1, -1);
-    tmp1 *= ptxt;
-    res *= tmp1;
-    tmp1 = ctxt;
+    for (int i = 2; i < n; ++i)
+    {
+        ea.shift(tmp1, i);
+        sum += tmp1;
+        tmp1 = ctxt;
+    }
+    orig *= sum;
+    helib::totalSums(ea, orig);
+
+    return orig;
+}
+
+helib::Ctxt util_E_2(const helib::EncryptedArray& ea, const helib::Ctxt & ctxt)
+{
+    helib::Ctxt tmp1 = ctxt;
+    helib::Ctxt sum = ctxt;
+    long n = ea.size();
+
+    ea.shift(sum, 1);
 
     for (int i = 1; i < (n-1); ++i)
     {
-        ea.rotate(tmp1, -i-1);
-        ptxt[n-i-1] = 0;
-
-        tmp1 *= ptxt;
-        tmp2 *= tmp1;
-        res += tmp2;
-
-        tmp2 = ctxt;
+        ea.shift(tmp1, i+1);
+        sum += tmp1;
         tmp1 = ctxt;
     }
-    helib::totalSums(ea, res);
+    return sum;
+}
 
+
+helib::Ctxt E_3(const helib::EncryptedArray& ea, const helib::Ctxt & ctxt)
+{
+    helib::Ctxt sum_e2 = util_E_2(ea,ctxt);
+
+    helib::Ctxt tmp1 = ctxt;
+    helib::Ctxt res = ctxt;
+    helib::Ctxt sum = ctxt;
+    long n = ea.size();
+
+    ea.shift(sum, -1);
+
+    for (int i = 2; i < n-1; ++i){
+        ea.shift(tmp1, -i);
+
+        sum += tmp1;
+        tmp1 = ctxt;
+    }
+    sum_e2 *= sum;
+    res *= sum_e2;
+
+    helib::totalSums(ea, res);
     return res;
 }
 
@@ -60,7 +87,7 @@ int main(int argc, char* argv[])
   // Cyclotomic polynomial - defines phi(m)
   unsigned long m = 32763;
   // Hensel lifting (default = 1)
-  unsigned long r = 31;
+  unsigned long r = 32;
   // Number of bits of the modulus chain
   unsigned long bits = 350;
   // Number of columns of Key-Switching matrix (default = 2 or 3)
@@ -107,11 +134,13 @@ int main(int argc, char* argv[])
 
   // Create a vector of long with nslots elements
   helib::Ptxt<helib::BGV> ptxt(context);
-  // Set it with numbers 0..nslots - 1
-  //ptxt = [0] [1] [2] ... [nslots-2] [nslots-1]
+  // Set it with numbers 1..nslots
+  //ptxt = [1] [2] [3] ... [nslots-1] [nslots]
   for (int i = 0; i < ptxt.size(); ++i) {
-    ptxt[i] = i;
+    ptxt[i] = i+1;
   }
+
+  std::cout << "Plaintext: " << ptxt << std::endl;
 
     
   // Create a ciphertext object
@@ -120,39 +149,49 @@ int main(int argc, char* argv[])
   public_key.Encrypt(ctxt, ptxt);
 
 
-  int power = 2;
+  int power = 4;
 
-  HELIB_NTIMER_START(timer_ptxt);
-  PowerSum(ea, ctxt, power);
-  //ctxt.totalSums();
-  HELIB_NTIMER_STOP(timer_ptxt);
+  std::cout << std::endl << "Eval power sum symmetric polynomial with power = " << power << std::endl;
+
+  HELIB_NTIMER_START(timer_PowerSum);
+  PowerSumSymm(ea, ctxt, power);
+  HELIB_NTIMER_STOP(timer_PowerSum);
 
   helib::Ptxt<helib::BGV> plaintext_result(context);
   secret_key.Decrypt(plaintext_result, ctxt);
 
   std::cout << "Decrypted Result: " << plaintext_result << std::endl;
 
-  std::vector<long> arr;
-  for (long i = 0L; i < ptxt.size(); ++i) {
-    arr.emplace_back(i);
-  }
-  long long sum;
 
-  HELIB_NTIMER_START(timer_brut);
-  sum = BrutPowerSum(arr, power);
-  HELIB_NTIMER_STOP(timer_brut);
-  
-  std::cout << sum << std::endl;
-
-  helib::printNamedTimer(std::cout << std::endl, "timer_ptxt");
-  helib::printNamedTimer(std::cout, "timer_brut");
+  helib::printNamedTimer(std::cout, "timer_PowerSum");
 
   ctxt.clear();
   public_key.Encrypt(ctxt, ptxt);
+
+  std::cout << std::endl << "Eval elementary symmetric polynomial with k = 2" << std::endl;
+  
+  HELIB_NTIMER_START(timer_E_2);
   helib::Ctxt res = E_2(ea, ctxt);
+  HELIB_NTIMER_STOP(timer_E_2);
 
   secret_key.Decrypt(plaintext_result, res);
   std::cout << "Decrypted Result: " << plaintext_result << std::endl;
+
+  helib::printNamedTimer(std::cout, "timer_E_2");
+
+  ctxt.clear();
+  public_key.Encrypt(ctxt, ptxt);
+
+  std::cout << std::endl << "Eval elementary symmetric polynomial with k = 3" << std::endl;
+  
+  HELIB_NTIMER_START(timer_E_3);
+  res = E_3(ea, ctxt);
+  HELIB_NTIMER_STOP(timer_E_3);
+
+  secret_key.Decrypt(plaintext_result, res);
+  std::cout << "Decrypted Result: " << plaintext_result << std::endl;
+
+  helib::printNamedTimer(std::cout, "timer_E_3");
 
   return 0;
 }
