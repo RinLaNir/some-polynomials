@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS OFF)
 ## Require full C++ standard
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-project(HELibDemo VERSION 1.0)
+project(some-polynomials VERSION 1.0)
 
 add_executable(helibdemo helibdemo.cpp)
 add_executable(PowSums PowSums.cpp)
